@@ -97,6 +97,12 @@ export const ActiveBar: React.FC<ActiveBarProps> = ({
               <div className="flex items-center space-x-2 text-xs text-slate-600 mt-0.5 truncate">
                 <span className="font-medium text-slate-800">Next Action:</span>
                 <span className="truncate italic">{activeCard.next_physical_action || 'None specified'}</span>
+                {activeCard.temporal_workflow && (
+                  <span className="ml-2 inline-flex items-center space-x-1 text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-900 border border-indigo-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-ping" />
+                    <span>TEMPORAL: {activeCard.temporal_workflow.workflow_id} (HB #{activeCard.temporal_workflow.heartbeat_count})</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>

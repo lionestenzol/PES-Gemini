@@ -10,8 +10,12 @@ import {
   Sparkles,
   ShieldAlert,
   Clock,
+  User,
+  ShieldCheck,
+  Smartphone,
+  Columns,
 } from 'lucide-react';
-import { ActiveTab, OperatingMode } from '../types.js';
+import { ActiveTab, OperatingMode, UserIdentity } from '../types.js';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -22,6 +26,11 @@ interface HeaderProps {
   onOpenQuickCapture: () => void;
   totalCards: number;
   inboxCount: number;
+  currentUser: UserIdentity;
+  users: UserIdentity[];
+  onSelectUser: (user: UserIdentity) => void;
+  isSplitView?: boolean;
+  onToggleSplitView?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -33,12 +42,25 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenQuickCapture,
   totalCards,
   inboxCount,
+  currentUser,
+  users,
+  onSelectUser,
+  isSplitView,
+  onToggleSplitView,
 }) => {
   const modes: OperatingMode[] = ['Full', 'Reduced', 'Recovery', 'Admin', 'Field', 'Review'];
 
-  const navItems: { id: ActiveTab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }[] = [
+  const navItems: {
+    id: ActiveTab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    count?: number;
+    badge?: string;
+  }[] = [
     { id: 'board', label: 'Lifecycle Board', icon: Kanban, count: totalCards },
     { id: 'queue', label: 'Daily Queue', icon: CalendarDays },
+    { id: 'optimizer', label: 'Optimizer (Path D)', icon: Sparkles },
+    { id: 'droplist', label: 'DropList Console', icon: Smartphone, badge: 'FIELD' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: inboxCount },
     { id: 'capacity', label: 'Capacity Planner', icon: Gauge },
     { id: 'proof', label: 'Proof Index', icon: CheckCircle2 },
@@ -67,8 +89,43 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Mode Selector and Quick Actions */}
+          {/* Mode Selector, Role Persona, and Quick Actions */}
           <div className="flex items-center space-x-3">
+            {/* Path C Persona / Role Selector */}
+            <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500 pl-1.5 pr-1 uppercase tracking-wider flex items-center gap-1">
+                <User className="w-3 h-3 text-slate-500" />
+                Actor:
+              </span>
+              <select
+                value={currentUser.id}
+                onChange={(e) => {
+                  const found = users.find((u) => u.id === e.target.value);
+                  if (found) onSelectUser(found);
+                }}
+                className="text-xs font-semibold bg-white text-slate-800 border border-slate-200 rounded px-2 py-1 shadow-2xs focus:outline-hidden focus:ring-1 focus:ring-slate-900 cursor-pointer"
+              >
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+              <span
+                className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                  currentUser.role === 'admin'
+                    ? 'bg-purple-100 text-purple-800'
+                    : currentUser.role === 'verifier'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : currentUser.role === 'scheduler'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-slate-200 text-slate-700'
+                }`}
+              >
+                {currentUser.role}
+              </span>
+            </div>
+
             {/* Operating Mode Selector */}
             <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
               <span className="text-[11px] font-medium text-slate-500 pl-1.5 pr-1 uppercase tracking-wider flex items-center">
@@ -86,6 +143,22 @@ export const Header: React.FC<HeaderProps> = ({
                 ))}
               </select>
             </div>
+
+            {/* Split Screen Field Mode Toggle */}
+            {onToggleSplitView && (
+              <button
+                onClick={onToggleSplitView}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                  isSplitView
+                    ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-2xs'
+                    : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
+                }`}
+                title="Toggle Split-Screen Mobile/Field Console on Desktop"
+              >
+                <Columns className="w-3.5 h-3.5 text-amber-600" />
+                <span>{isSplitView ? 'Close Split' : 'Split View'}</span>
+              </button>
+            )}
 
             {/* Quick Capture Button */}
             <button
@@ -124,6 +197,11 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-900' : 'text-slate-400'}`} />
                 <span>{item.label}</span>
+                {item.badge && (
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 uppercase tracking-wider">
+                    {item.badge}
+                  </span>
+                )}
                 {item.count !== undefined && item.count > 0 && (
                   <span
                     className={`ml-1 text-[10px] px-1.5 py-0.2 rounded-full font-mono ${

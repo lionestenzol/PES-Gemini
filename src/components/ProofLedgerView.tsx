@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ProofRecord, CommitmentCard } from '../types.js';
+import { ProofRecord, CommitmentCard, UserIdentity } from '../types.js';
 import {
   CheckCircle2,
   ExternalLink,
@@ -9,6 +9,8 @@ import {
   FileCheck,
   AlertCircle,
   FileText,
+  UserCheck,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface ProofLedgerViewProps {
@@ -16,6 +18,7 @@ interface ProofLedgerViewProps {
   onVerifyProof: (cardId: string) => void;
   onSelectCard: (card: CommitmentCard) => void;
   cards: CommitmentCard[];
+  currentUser: UserIdentity;
 }
 
 export const ProofLedgerView: React.FC<ProofLedgerViewProps> = ({
@@ -23,9 +26,12 @@ export const ProofLedgerView: React.FC<ProofLedgerViewProps> = ({
   onVerifyProof,
   onSelectCard,
   cards,
+  currentUser,
 }) => {
   const [search, setSearch] = useState('');
   const [filterVerified, setFilterVerified] = useState<'all' | 'verified' | 'pending'>('all');
+
+  const isAuthorizedToVerify = currentUser.role === 'verifier' || currentUser.role === 'admin';
 
   const filteredProofs = proofs.filter((p) => {
     const card = cards.find((c) => c.id === p.card_id);
@@ -149,20 +155,27 @@ export const ProofLedgerView: React.FC<ProofLedgerViewProps> = ({
                       {/* Status */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         {p.verified ? (
-                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200">
-                            <CheckCircle2 className="w-3 h-3 text-teal-600" />
-                            <span>Verified</span>
-                          </span>
+                          <div>
+                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200">
+                              <CheckCircle2 className="w-3 h-3 text-teal-600" />
+                              <span>Verified</span>
+                            </span>
+                            <span className="block text-[10px] text-slate-400 font-mono mt-0.5">
+                              {p.verified_by ? `By ${p.verified_by}` : ''} {p.verified_at ? `on ${new Date(p.verified_at).toLocaleDateString()}` : ''}
+                            </span>
+                          </div>
                         ) : (
-                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                            <Clock className="w-3 h-3 text-amber-600" />
-                            <span>Pending Verification</span>
-                          </span>
-                        )}
-                        {p.verified_at && (
-                          <span className="block text-[10px] text-slate-400 font-mono mt-0.5">
-                            {new Date(p.verified_at).toLocaleDateString()}
-                          </span>
+                          <div>
+                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>Pending Verification</span>
+                            </span>
+                            {card && (card.risk_level === 'High' || card.priority >= 80) && (
+                              <span className="block text-[9px] font-mono text-rose-600 mt-0.5 font-bold uppercase tracking-wider">
+                                High-Risk: Segregated Sign-off
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
 
@@ -170,12 +183,30 @@ export const ProofLedgerView: React.FC<ProofLedgerViewProps> = ({
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end space-x-2">
                           {!p.verified && (
-                            <button
-                              onClick={() => onVerifyProof(p.card_id)}
-                              className="px-2.5 py-1 rounded text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 transition-colors shadow-2xs"
-                            >
-                              Verify Proof
-                            </button>
+                            <>
+                              {card && (card.risk_level === 'High' || card.priority >= 80) && card.owner === currentUser.id && currentUser.role !== 'admin' ? (
+                                <span
+                                  className="px-2 py-1 rounded text-[10px] font-mono bg-rose-50 text-rose-700 border border-rose-200 cursor-not-allowed"
+                                  title="Path C Separation of Duties: Owner cannot self-verify high-risk commitments."
+                                >
+                                  Self-Verify Blocked
+                                </span>
+                              ) : !isAuthorizedToVerify ? (
+                                <span
+                                  className="px-2 py-1 rounded text-[10px] font-mono bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed"
+                                  title={`Path C: Role '${currentUser.role}' cannot certify proof. Switch to Verifier or Admin.`}
+                                >
+                                  Role Locked
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => onVerifyProof(p.card_id)}
+                                  className="px-2.5 py-1 rounded text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 transition-colors shadow-2xs"
+                                >
+                                  Verify Proof
+                                </button>
+                              )}
+                            </>
                           )}
                           {card && (
                             <button

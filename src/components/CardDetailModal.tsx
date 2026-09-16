@@ -296,9 +296,16 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
               {/* Completion & Proof Result (If completed or verified) */}
               {(card.result || card.proof_location) && (
                 <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-2">
-                  <h4 className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
-                    Recorded Proof & Execution Outcome
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
+                      Recorded Proof & Execution Outcome
+                    </h4>
+                    {card.verified_by && (
+                      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-200 text-emerald-900 border border-emerald-300">
+                        Signed off by: {card.verified_by} ({card.verified_role})
+                      </span>
+                    )}
+                  </div>
                   {card.result && (
                     <div>
                       <span className="text-[10px] font-semibold text-emerald-700 block">
@@ -317,6 +324,50 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Path B: Temporal Workflow Execution Panel */}
+              {card.temporal_workflow && (
+                <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-2 font-mono text-xs border border-slate-800 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                      Temporal Workflow State (Path B)
+                    </span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        card.temporal_workflow.status === 'RUNNING'
+                          ? 'bg-amber-400 text-slate-950 animate-pulse'
+                          : card.temporal_workflow.status === 'COMPLETED'
+                          ? 'bg-emerald-400 text-slate-950'
+                          : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {card.temporal_workflow.status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Workflow ID:</span>
+                      <span className="text-slate-200 font-semibold">{card.temporal_workflow.workflow_id}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Run ID:</span>
+                      <span className="text-slate-200 font-semibold">{card.temporal_workflow.run_id}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Current Activity:</span>
+                      <span className="text-indigo-300 font-semibold">{card.temporal_workflow.activity_name}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Heartbeats:</span>
+                      <span className="text-amber-300 font-semibold">
+                        #{card.temporal_workflow.heartbeat_count} &bull; Retries: {card.temporal_workflow.retry_attempt}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               )}
 

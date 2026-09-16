@@ -2,7 +2,8 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { globalPesEngine } from './src/lib/pes-engine.ts';
+import { globalPesEngine, DEFAULT_USERS, getMondayOfWeek } from './src/lib/pes-engine.ts';
+import { PathDSolver } from './src/lib/path-d-solver.ts';
 
 async function startServer() {
   const app = express();
@@ -61,11 +62,15 @@ async function startServer() {
 
   apiRouter.post('/commitments/:id/move', (req: Request, res: Response) => {
     try {
-      const { target, ...facts } = req.body;
+      const { target, actor, actor_role, ...facts } = req.body;
       if (!target) {
         return res.status(400).json({ ok: false, error: 'target state is required' });
       }
-      const moved = globalPesEngine.moveCard(req.params.id, target, facts);
+      const moved = globalPesEngine.moveCard(req.params.id, target, {
+        ...facts,
+        actor,
+        actor_role,
+      });
       res.json({ ok: true, data: moved });
     } catch (err: any) {
       res.status(409).json({ ok: false, error: err.message });
@@ -161,7 +166,8 @@ async function startServer() {
 
   apiRouter.post('/proof/:id/verify', (req: Request, res: Response) => {
     try {
-      const verified = globalPesEngine.verifyProof(req.params.id);
+      const { actor, actor_role } = req.body;
+      const verified = globalPesEngine.verifyProof(req.params.id, actor, actor_role);
       res.json({ ok: true, data: verified });
     } catch (err: any) {
       res.status(400).json({ ok: false, error: err.message });
@@ -176,6 +182,113 @@ async function startServer() {
       res.json({ ok: true, data: globalPesEngine.getLogs(cardId, limit) });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Users & Roles (Path C)
+  apiRouter.get('/users', (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, data: DEFAULT_USERS });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Links & Dependencies
+  apiRouter.get('/links', (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, data: globalPesEngine.getLinks() });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/links', (req: Request, res: Response) => {
+    try {
+      const link = globalPesEngine.addLink(req.body);
+      res.status(201).json({ ok: true, data: link });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.delete('/links/:from_id/:to_id', (req: Request, res: Response) => {
+    try {
+      const deleted = globalPesEngine.deleteLink(req.params.from_id, req.params.to_id);
+      res.json({ ok: true, deleted });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Optimizer & Fixed Events (Path D)
+  apiRouter.get('/optimizer/fixed-events', (req: Request, res: Response) => {
+    try {
+      const weekOf = req.query.week_of as string | undefined;
+      res.json({ ok: true, data: globalPesEngine.getFixedEvents(weekOf) });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/optimizer/fixed-events', (req: Request, res: Response) => {
+    try {
+      const event = globalPesEngine.addFixedEvent(req.body);
+      res.status(201).json({ ok: true, data: event });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.delete('/optimizer/fixed-events/:id', (req: Request, res: Response) => {
+    try {
+      const deleted = globalPesEngine.deleteFixedEvent(req.params.id);
+      res.json({ ok: true, deleted });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/optimizer/solve', (req: Request, res: Response) => {
+    try {
+      const weekOf = req.body.week_of || (req.query.week_of as string) || getMondayOfWeek(new Date());
+      const whatIf = req.body.what_if;
+
+      const cards = globalPesEngine.getCards();
+      const capacity = globalPesEngine.getCapacity(weekOf);
+      const links = globalPesEngine.getLinks();
+      const fixedEvents = globalPesEngine.getFixedEvents(weekOf);
+
+      const proposal = PathDSolver.solve(weekOf, cards, capacity, links, fixedEvents, whatIf);
+      res.json({ ok: true, data: proposal });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/optimizer/import', (req: Request, res: Response) => {
+    try {
+      const { proposal, actor, actor_role } = req.body;
+      if (!proposal || !proposal.blocks) {
+        return res.status(400).json({ ok: false, error: 'A valid optimizer proposal is required' });
+      }
+      const result = globalPesEngine.importProposal(proposal, actor, actor_role);
+      res.json({ ok: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  // RFC 5545 Calendar ICS Export
+  apiRouter.get('/calendar/export.ics', (req: Request, res: Response) => {
+    try {
+      const weekOf = req.query.week_of as string | undefined;
+      const ics = globalPesEngine.generateIcsCalendar(weekOf);
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="pes-schedule.ics"');
+      res.send(ics);
+    } catch (err: any) {
+      res.status(500).send(`Error generating ICS calendar: ${err.message}`);
     }
   });
 

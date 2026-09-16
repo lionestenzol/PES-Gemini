@@ -6,7 +6,21 @@ import {
   AuditEvent,
   ProofRecord,
   CardLink,
+  PesRole,
+  UserIdentity,
+  FixedEvent,
+  OptimizerProposal,
+  TemporalWorkflowInfo,
 } from '../types.js';
+
+export const DEFAULT_USERS: UserIdentity[] = [
+  { id: 'worker-1', name: 'Alex Rivera (Worker)', role: 'worker' },
+  { id: 'worker-2', name: 'Devon Smith (Worker)', role: 'worker' },
+  { id: 'verifier-1', name: 'Jordan Vance (Verifier)', role: 'verifier' },
+  { id: 'reviewer-1', name: 'Morgan Chen (Reviewer)', role: 'reviewer' },
+  { id: 'scheduler-1', name: 'Sam Taylor (Scheduler)', role: 'scheduler' },
+  { id: 'admin-1', name: 'System Admin (All Roles)', role: 'admin' },
+];
 
 export const VALID_TRANSITIONS: Record<CardState, CardState[]> = {
   Captured: ['Ready', 'Canceled'],
@@ -55,9 +69,11 @@ export class PesEngine {
   private auditLogs: AuditEvent[] = [];
   private proofRecords: Map<string, ProofRecord> = new Map();
   private links: CardLink[] = [];
+  private fixedEvents: FixedEvent[] = [];
   private nextInboxId = 1;
   private nextLogId = 1;
   private nextProofId = 1;
+  private nextFixedEventId = 1;
 
   constructor() {
     this.seedDefaultData();
@@ -106,9 +122,24 @@ export class PesEngine {
         block_reason: null,
         waiting_for: null,
         fallback_action: 'Revert to Path A CLI execution if needed',
-        owner: 'user',
+        owner: 'worker-1',
         priority: 90,
         risk_level: 'High',
+        temporal_workflow: {
+          workflow_id: 'pes-wf-T-001',
+          run_id: 'run-b8f2d1',
+          status: 'RUNNING',
+          started_at: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+          last_heartbeat: new Date().toISOString(),
+          heartbeat_count: 84,
+          activity_name: 'VerifyHttpContractsActivity',
+          retry_attempt: 1,
+        },
+        steps: [
+          { text: 'Verify PKCE verification challenge in auth header', done: true },
+          { text: 'Run integration test suite with synthetic dual-tenant context', done: false },
+          { text: 'Verify tenant schema isolation barrier in memory engine', done: false },
+        ],
         created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -122,6 +153,11 @@ export class PesEngine {
         next_physical_action: 'Outline operational safety rules',
         state: 'Ready',
         schedule_status: 'unscheduled',
+        steps: [
+          { text: 'Outline operational safety rules and single-active law', done: false },
+          { text: 'Document proof ledger submission criteria', done: false },
+          { text: 'Draft recovery protocol checklist for blocked items', done: false },
+        ],
         planned_date: null,
         planned_start: null,
         planned_end: null,
@@ -335,9 +371,36 @@ export class PesEngine {
         state_from: 'Completed',
         state_to: 'Verified',
         note: 'Proof of completion audited and verified.',
+        actor: 'verifier-1',
+        actor_role: 'verifier',
         actual_start: null,
         actual_end: null,
       },
+    ];
+
+    // Seed Fixed Calendar Events (Path D Constraint Anchor)
+    this.fixedEvents = [
+      {
+        id: 'FE-01',
+        name: 'Weekly Planning & Capacity Lock',
+        event_date: currentWeekMonday,
+        start_time: '10:00',
+        end_time: '11:00',
+        resource: 'worker-1',
+      },
+      {
+        id: 'FE-02',
+        name: 'Architecture & Verification Sync',
+        event_date: new Date(new Date(currentWeekMonday + 'T00:00:00').setDate(new Date(currentWeekMonday + 'T00:00:00').getDate() + 2)).toISOString().split('T')[0],
+        start_time: '14:00',
+        end_time: '15:00',
+        resource: 'worker-1',
+      },
+    ];
+
+    // Seed Precedence Links (Path D & Invariant Check)
+    this.links = [
+      { from_id: 'T-001', to_id: 'T-002', link_type: 'requires' },
     ];
   }
 
@@ -500,7 +563,7 @@ export class PesEngine {
   public moveCard(
     cardId: string,
     targetState: CardState,
-    facts: Partial<CommitmentCard> & { note?: string } = {}
+    facts: Partial<CommitmentCard> & { note?: string; actor?: string; actor_role?: PesRole } = {}
   ): CommitmentCard {
     const card = this.cards.get(cardId);
     if (!card) throw new Error(`Card ${cardId} not found`);
@@ -667,6 +730,21 @@ export class PesEngine {
       if (!proofLoc || !String(proofLoc).trim()) {
         throw new Error('Verified gate failed: proof_location is required before verification');
       }
+
+      // Path C Role verification: Only verifier or admin can certify proof
+      const actor = facts.actor || 'verifier-1';
+      const actorRole = facts.actor_role || 'verifier';
+      if (actorRole !== 'verifier' && actorRole !== 'admin') {
+        throw new Error(
+          `Path C Authorization Failure: Role '${actorRole}' is not authorized to certify completion proof. Only 'verifier' or 'admin' may verify tasks.`
+        );
+      }
+      // Path C Separation of Duties: Worker cannot self-verify own high-risk or high-priority task
+      if ((card.risk_level === 'High' || card.priority >= 80) && card.owner === actor && actorRole !== 'admin') {
+        throw new Error(
+          `Path C Separation of Duties Violation: Task ${cardId} is high-risk/priority. Owner '${card.owner}' cannot self-verify their own completion. An independent verifier must sign off.`
+        );
+      }
     }
 
     // Update Schedule Status
@@ -678,11 +756,39 @@ export class PesEngine {
     }
 
     const now = new Date().toISOString();
+
+    // Path B Temporal Workflow Tracking
+    let workflowInfo = card.temporal_workflow || null;
+    if (targetState === 'Active') {
+      const startTime = facts.actual_start || now;
+      workflowInfo = {
+        workflow_id: `pes-wf-${cardId}`,
+        run_id: `run-${Math.random().toString(36).substring(2, 8)}`,
+        status: 'RUNNING',
+        started_at: startTime,
+        last_heartbeat: now,
+        heartbeat_count: (card.temporal_workflow?.heartbeat_count || 0) + 1,
+        activity_name: 'ExecutePhysicalAction',
+        retry_attempt: 1,
+      };
+    } else if (targetState === 'Paused') {
+      if (workflowInfo) {
+        workflowInfo = { ...workflowInfo, status: 'PAUSED', last_heartbeat: now };
+      }
+    } else if (['Completed', 'Done', 'Canceled'].includes(targetState)) {
+      if (workflowInfo) {
+        workflowInfo = { ...workflowInfo, status: 'COMPLETED', last_heartbeat: now };
+      }
+    }
+
     const updatedCard: CommitmentCard = {
       ...card,
       ...facts,
       state: targetState,
       schedule_status: newScheduleStatus,
+      temporal_workflow: workflowInfo,
+      verified_by: targetState === 'Verified' ? (facts.actor || 'verifier-1') : card.verified_by,
+      verified_role: targetState === 'Verified' ? (facts.actor_role || 'verifier') : card.verified_role,
       updated_at: now,
     };
 
@@ -712,6 +818,8 @@ export class PesEngine {
       state_from: currentState,
       state_to: targetState,
       note: facts.note || `Transitioned from ${currentState} to ${targetState}`,
+      actor: facts.actor || 'worker-1',
+      actor_role: facts.actor_role || 'worker',
       actual_start: facts.actual_start || null,
       actual_end: facts.actual_end || null,
     });
@@ -735,12 +843,20 @@ export class PesEngine {
     }
   }
 
-  public verifyProof(cardId: string): ProofRecord {
+  public verifyProof(
+    cardId: string,
+    actor: string = 'verifier-1',
+    actorRole: PesRole = 'verifier'
+  ): ProofRecord {
     const card = this.cards.get(cardId);
     if (!card) throw new Error(`Card ${cardId} not found`);
 
     if (card.state === 'Completed') {
-      this.moveCard(cardId, 'Verified', { note: 'Proof manually inspected and verified' });
+      this.moveCard(cardId, 'Verified', {
+        note: `Proof inspected and verified by ${actor} (${actorRole})`,
+        actor,
+        actor_role: actorRole,
+      });
     }
 
     const proof = this.proofRecords.get(cardId);
@@ -750,7 +866,172 @@ export class PesEngine {
 
     proof.verified = true;
     proof.verified_at = new Date().toISOString();
+    proof.verified_by = actor;
     return proof;
+  }
+
+  public getFixedEvents(weekOf?: string): FixedEvent[] {
+    if (!weekOf) return [...this.fixedEvents];
+    const monday = getMondayOfWeek(weekOf);
+    const sunday = new Date(monday + 'T00:00:00');
+    sunday.setDate(sunday.getDate() + 6);
+    const sundayStr = sunday.toISOString().split('T')[0];
+    return this.fixedEvents.filter(
+      (ev) => ev.event_date >= monday && ev.event_date <= sundayStr
+    );
+  }
+
+  public addFixedEvent(event: Omit<FixedEvent, 'id'> & { id?: string }): FixedEvent {
+    const id = event.id || `FE-${String(this.nextFixedEventId++).padStart(2, '0')}`;
+    const newEvent: FixedEvent = {
+      id,
+      name: event.name.trim(),
+      event_date: event.event_date,
+      start_time: event.start_time,
+      end_time: event.end_time,
+      resource: event.resource || 'worker-1',
+    };
+    this.fixedEvents.push(newEvent);
+    return newEvent;
+  }
+
+  public deleteFixedEvent(id: string): boolean {
+    const idx = this.fixedEvents.findIndex((e) => e.id === id);
+    if (idx >= 0) {
+      this.fixedEvents.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  public getLinks(): CardLink[] {
+    return [...this.links];
+  }
+
+  public addLink(link: CardLink): CardLink {
+    if (link.from_id === link.to_id) {
+      throw new Error('Self-referential links are not permitted');
+    }
+    const exists = this.links.some(
+      (l) => l.from_id === link.from_id && l.to_id === link.to_id
+    );
+    if (exists) {
+      throw new Error(`Link between ${link.from_id} and ${link.to_id} already exists`);
+    }
+    this.links.push(link);
+    return link;
+  }
+
+  public deleteLink(from_id: string, to_id: string): boolean {
+    const idx = this.links.findIndex((l) => l.from_id === from_id && l.to_id === to_id);
+    if (idx >= 0) {
+      this.links.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  public importProposal(
+    proposal: OptimizerProposal,
+    actor: string = 'scheduler-1',
+    actorRole: PesRole = 'scheduler'
+  ): { imported: number; errors: string[] } {
+    let imported = 0;
+    const errors: string[] = [];
+
+    for (const block of proposal.blocks) {
+      const card = this.cards.get(block.card_id);
+      if (!card) {
+        errors.push(`Card ${block.card_id} not found`);
+        continue;
+      }
+      try {
+        this.moveCard(block.card_id, 'Scheduled', {
+          planned_date: block.planned_date,
+          planned_start: block.planned_start,
+          planned_end: block.planned_end,
+          planned_duration: block.planned_duration,
+          note: `Path D Optimizer scheduled into slot ${block.planned_date} ${block.planned_start}-${block.planned_end} (Run ${proposal.run_id})`,
+          actor,
+          actor_role: actorRole,
+        });
+        imported++;
+      } catch (err: any) {
+        errors.push(`${block.card_id}: ${err.message}`);
+      }
+    }
+
+    return { imported, errors };
+  }
+
+  public generateIcsCalendar(weekOf?: string): string {
+    const monday = weekOf ? getMondayOfWeek(weekOf) : getMondayOfWeek(new Date());
+    const sunday = new Date(monday + 'T00:00:00');
+    sunday.setDate(sunday.getDate() + 6);
+    const sundayStr = sunday.toISOString().split('T')[0];
+
+    const scheduled = this.getCards().filter(
+      (c) => c.state === 'Scheduled' && c.planned_date && c.planned_date >= monday && c.planned_date <= sundayStr
+    );
+
+    const lines: string[] = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//PES//Personal Execution System//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:PES Commitments',
+    ];
+
+    for (const card of scheduled) {
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:${card.id}@pes.local`);
+      lines.push(`SUMMARY:${card.name.replace(/\n/g, ' ')}`);
+      lines.push(
+        `DESCRIPTION:PES card ${card.id}\\nDesired State: ${card.desired_state_desc.replace(/\n/g, ' ')}\\nProof: ${card.proof_of_completion.replace(/\n/g, ' ')}`
+      );
+
+      if (card.planned_date && card.planned_start) {
+        const dateClean = card.planned_date.replace(/-/g, '');
+        const startClean = card.planned_start.replace(/:/g, '') + '00';
+        const duration = card.planned_duration || 60;
+
+        const [sh, sm] = card.planned_start.split(':').map(Number);
+        const endTotal = sh * 60 + sm + duration;
+        const eh = Math.floor(endTotal / 60);
+        const em = endTotal % 60;
+        const endClean = `${String(eh).padStart(2, '0')}${String(em).padStart(2, '0')}00`;
+
+        lines.push(`DTSTART:${dateClean}T${startClean}`);
+        lines.push(`DTEND:${dateClean}T${endClean}`);
+      } else if (card.planned_date) {
+        const dateClean = card.planned_date.replace(/-/g, '');
+        lines.push(`DTSTART;VALUE=DATE:${dateClean}`);
+      }
+
+      lines.push('STATUS:CONFIRMED');
+      lines.push('END:VEVENT');
+    }
+
+    // Include fixed calendar events
+    for (const ev of this.fixedEvents) {
+      if (ev.event_date >= monday && ev.event_date <= sundayStr) {
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:fixed-${ev.id}@pes.local`);
+        lines.push(`SUMMARY:${ev.name}`);
+        lines.push(`DESCRIPTION:Fixed calendar commitment (${ev.resource})`);
+        const dateClean = ev.event_date.replace(/-/g, '');
+        const startClean = ev.start_time.replace(/:/g, '') + '00';
+        const endClean = ev.end_time.replace(/:/g, '') + '00';
+        lines.push(`DTSTART:${dateClean}T${startClean}`);
+        lines.push(`DTEND:${dateClean}T${endClean}`);
+        lines.push('STATUS:CONFIRMED');
+        lines.push('END:VEVENT');
+      }
+    }
+
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
   }
 
   public addInboxItem(rawText: string): InboxItem {

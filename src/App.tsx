@@ -8,12 +8,16 @@ import {
   AuditEvent,
   ActiveTab,
   OperatingMode,
+  UserIdentity,
+  OptimizerProposal,
 } from './types.js';
-import { globalPesEngine, getMondayOfWeek } from './lib/pes-engine.js';
+import { globalPesEngine, getMondayOfWeek, DEFAULT_USERS } from './lib/pes-engine.js';
 import { Header } from './components/Header.js';
 import { ActiveBar } from './components/ActiveBar.js';
 import { BoardView } from './components/BoardView.js';
 import { DailyQueueView } from './components/DailyQueueView.js';
+import { OptimizerView } from './components/OptimizerView.js';
+import { DropListConsole } from './components/DropListConsole.js';
 import { InboxView } from './components/InboxView.js';
 import { CapacityView } from './components/CapacityView.js';
 import { ProofLedgerView } from './components/ProofLedgerView.js';
@@ -27,10 +31,17 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('board');
   const [mode, setMode] = useState<OperatingMode>('Full');
 
+  // Path C Personas & Identities
+  const [users, setUsers] = useState<UserIdentity[]>(DEFAULT_USERS);
+  const [currentUser, setCurrentUser] = useState<UserIdentity>(DEFAULT_USERS[0]);
+
   const [cards, setCards] = useState<CommitmentCard[]>([]);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [capacity, setCapacity] = useState<CapacityRecord>(
     globalPesEngine.getCapacity(getMondayOfWeek())
+  );
+  const [capacityRecords, setCapacityRecords] = useState<CapacityRecord[]>(
+    globalPesEngine.getCapacityRecords()
   );
   const [proofs, setProofs] = useState<ProofRecord[]>([]);
   const [logs, setLogs] = useState<AuditEvent[]>([]);
@@ -42,6 +53,7 @@ export const App: React.FC = () => {
     targetState: CardState;
   } | null>(null);
   const [isNewCardOpen, setIsNewCardOpen] = useState(false);
+  const [isSplitView, setIsSplitView] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // Sync state from server/engine
@@ -140,11 +152,16 @@ export const App: React.FC = () => {
     facts: Partial<CommitmentCard> & { note?: string }
   ) => {
     setErrorBanner(null);
+    const enrichedFacts = {
+      ...facts,
+      actor: currentUser.id,
+      actor_role: currentUser.role,
+    };
     try {
       const res = await fetch(`/v1/commitments/${cardId}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: targetState, ...facts }),
+        body: JSON.stringify({ target: targetState, ...enrichedFacts }),
       });
 
       if (!res.ok) {
@@ -161,7 +178,7 @@ export const App: React.FC = () => {
     } catch (err: any) {
       // Fallback directly to local engine if offline/proxy issue
       try {
-        globalPesEngine.moveCard(cardId, targetState, facts);
+        globalPesEngine.moveCard(cardId, targetState, enrichedFacts);
         setTransitionState(null);
         if (selectedCard && selectedCard.id === cardId) {
           setSelectedCard(globalPesEngine.getCard(cardId) || null);
@@ -274,16 +291,136 @@ export const App: React.FC = () => {
     try {
       await fetch(`/v1/proof/${cardId}/verify`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor: currentUser.id,
+          actor_role: currentUser.role,
+        }),
       });
       await refreshAll();
     } catch {
-      globalPesEngine.verifyProof(cardId);
+      globalPesEngine.verifyProof(cardId, currentUser.id, currentUser.role);
+      await refreshAll();
+    }
+  };
+
+  const handleImportProposal = async (proposal: OptimizerProposal) => {
+    setErrorBanner(null);
+    try {
+      const res = await fetch('/v1/optimizer/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proposal,
+          actor: currentUser.id,
+          actor_role: currentUser.role,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      await refreshAll();
+    } catch (err: any) {
+      const result = globalPesEngine.importProposal(
+        proposal,
+        currentUser.id,
+        currentUser.role
+      );
+      if (result.errors.length > 0) {
+        setErrorBanner(`Some commitments failed to schedule: ${result.errors.join(', ')}`);
+      }
       await refreshAll();
     }
   };
 
   const activeCard = cards.find((c) => c.state === 'Active');
   const unprocessedInboxCount = inbox.filter((i) => i.mark === '?' && !i.processed_at).length;
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'board':
+        return (
+          <BoardView
+            cards={cards}
+            onSelectCard={(c) => setSelectedCard(c)}
+            onInitiateTransition={handleInitiateTransition}
+          />
+        );
+      case 'queue':
+        return (
+          <DailyQueueView
+            cards={cards}
+            onSelectCard={(c) => setSelectedCard(c)}
+            onInitiateTransition={handleInitiateTransition}
+          />
+        );
+      case 'optimizer':
+        return (
+          <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+            <OptimizerView
+              cards={cards}
+              capacityRecords={capacityRecords}
+              currentUser={currentUser}
+              onImportProposal={handleImportProposal}
+              onRefreshAll={refreshAll}
+              onSelectCard={(c) => setSelectedCard(c)}
+            />
+          </div>
+        );
+      case 'inbox':
+        return (
+          <InboxView
+            inbox={inbox}
+            onAddInboxItem={handleAddInboxItem}
+            onProcessInboxItem={handleProcessInboxItem}
+          />
+        );
+      case 'capacity':
+        return (
+          <CapacityView
+            capacity={capacity}
+            cards={cards}
+            onSaveCapacity={handleSaveCapacity}
+          />
+        );
+      case 'proof':
+        return (
+          <ProofLedgerView
+            proofs={proofs}
+            cards={cards}
+            currentUser={currentUser}
+            onVerifyProof={handleVerifyProof}
+            onSelectCard={(c) => setSelectedCard(c)}
+          />
+        );
+      case 'logs':
+        return (
+          <AuditLogView
+            logs={logs}
+            cards={cards}
+            onSelectCard={(c) => setSelectedCard(c)}
+          />
+        );
+      case 'droplist':
+        return (
+          <div className="min-h-[calc(100vh-8rem)] flex flex-col justify-between">
+            <DropListConsole
+              cards={cards}
+              currentUser={currentUser}
+              onInitiateTransition={handleInitiateTransition}
+              onUpdateCard={handleUpdateCard}
+              onAddInboxItem={handleAddInboxItem}
+              onSelectCard={(c) => setSelectedCard(c)}
+              onToggleLayout={() => setActiveTab('board')}
+              isSplitView={false}
+            />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
@@ -297,16 +434,23 @@ export const App: React.FC = () => {
         onOpenQuickCapture={() => setActiveTab('inbox')}
         totalCards={cards.length}
         inboxCount={unprocessedInboxCount}
+        currentUser={currentUser}
+        users={users}
+        onSelectUser={setCurrentUser}
+        isSplitView={isSplitView}
+        onToggleSplitView={() => setIsSplitView((prev) => !prev)}
       />
 
-      {/* Single-Active Execution Banner */}
-      <ActiveBar
-        activeCard={activeCard}
-        onComplete={(card) => handleInitiateTransition(card, 'Completed')}
-        onPause={(card) => handleInitiateTransition(card, 'Paused')}
-        onBlock={(card) => handleInitiateTransition(card, 'Blocked')}
-        onViewCard={(card) => setSelectedCard(card)}
-      />
+      {/* Single-Active Execution Banner (Only shown in standard desktop views) */}
+      {activeTab !== 'droplist' && !isSplitView && (
+        <ActiveBar
+          activeCard={activeCard}
+          onComplete={(card) => handleInitiateTransition(card, 'Completed')}
+          onPause={(card) => handleInitiateTransition(card, 'Paused')}
+          onBlock={(card) => handleInitiateTransition(card, 'Blocked')}
+          onViewCard={(card) => setSelectedCard(card)}
+        />
+      )}
 
       {/* Error Notification Banner */}
       {errorBanner && (
@@ -326,55 +470,31 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content Area: Split View or Standard */}
       <main className="flex-1">
-        {activeTab === 'board' && (
-          <BoardView
-            cards={cards}
-            onSelectCard={(c) => setSelectedCard(c)}
-            onInitiateTransition={handleInitiateTransition}
-          />
-        )}
+        {isSplitView ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[calc(100vh-4rem)]">
+            {/* Desktop Dashboard Side */}
+            <div className="lg:col-span-7 xl:col-span-8 overflow-y-auto border-r border-slate-200">
+              {renderTabContent()}
+            </div>
 
-        {activeTab === 'queue' && (
-          <DailyQueueView
-            cards={cards}
-            onSelectCard={(c) => setSelectedCard(c)}
-            onInitiateTransition={handleInitiateTransition}
-          />
-        )}
-
-        {activeTab === 'inbox' && (
-          <InboxView
-            inbox={inbox}
-            onAddInboxItem={handleAddInboxItem}
-            onProcessInboxItem={handleProcessInboxItem}
-          />
-        )}
-
-        {activeTab === 'capacity' && (
-          <CapacityView
-            capacity={capacity}
-            cards={cards}
-            onSaveCapacity={handleSaveCapacity}
-          />
-        )}
-
-        {activeTab === 'proof' && (
-          <ProofLedgerView
-            proofs={proofs}
-            cards={cards}
-            onVerifyProof={handleVerifyProof}
-            onSelectCard={(c) => setSelectedCard(c)}
-          />
-        )}
-
-        {activeTab === 'logs' && (
-          <AuditLogView
-            logs={logs}
-            cards={cards}
-            onSelectCard={(c) => setSelectedCard(c)}
-          />
+            {/* Tactile Field Console Side */}
+            <div className="lg:col-span-5 xl:col-span-4 min-h-[650px] border-l border-slate-900 bg-[#0c0e0d] flex flex-col shadow-2xl">
+              <DropListConsole
+                cards={cards}
+                currentUser={currentUser}
+                onInitiateTransition={handleInitiateTransition}
+                onUpdateCard={handleUpdateCard}
+                onAddInboxItem={handleAddInboxItem}
+                onSelectCard={(c) => setSelectedCard(c)}
+                onToggleLayout={() => setIsSplitView(false)}
+                isSplitView={true}
+              />
+            </div>
+          </div>
+        ) : (
+          renderTabContent()
         )}
       </main>
 

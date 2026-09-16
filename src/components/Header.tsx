@@ -14,6 +14,10 @@ import {
   ShieldCheck,
   Smartphone,
   Columns,
+  Cpu,
+  Layers,
+  Bot,
+  Zap,
 } from 'lucide-react';
 import { ActiveTab, OperatingMode, UserIdentity } from '../types.js';
 
@@ -31,6 +35,8 @@ interface HeaderProps {
   onSelectUser: (user: UserIdentity) => void;
   isSplitView?: boolean;
   onToggleSplitView?: () => void;
+  onOpenAgentDrawer?: () => void;
+  onOpenStuckModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -47,6 +53,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectUser,
   isSplitView,
   onToggleSplitView,
+  onOpenAgentDrawer,
+  onOpenStuckModal,
 }) => {
   const modes: OperatingMode[] = ['Full', 'Reduced', 'Recovery', 'Admin', 'Field', 'Review'];
 
@@ -58,9 +66,11 @@ export const Header: React.FC<HeaderProps> = ({
     badge?: string;
   }[] = [
     { id: 'board', label: 'Lifecycle Board', icon: Kanban, count: totalCards },
+    { id: 'the-line', label: 'The Line', icon: Layers, badge: 'AI BIN' },
+    { id: 'v2-pipeline', label: 'PES V2 Engine', icon: Cpu, badge: 'V2' },
+    { id: 'droplist', label: 'DropList Console', icon: Smartphone, badge: 'FIELD' },
     { id: 'queue', label: 'Daily Queue', icon: CalendarDays },
     { id: 'optimizer', label: 'Optimizer (Path D)', icon: Sparkles },
-    { id: 'droplist', label: 'DropList Console', icon: Smartphone, badge: 'FIELD' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: inboxCount },
     { id: 'capacity', label: 'Capacity Planner', icon: Gauge },
     { id: 'proof', label: 'Proof Index', icon: CheckCircle2 },
@@ -157,6 +167,30 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Columns className="w-3.5 h-3.5 text-amber-600" />
                 <span>{isSplitView ? 'Close Split' : 'Split View'}</span>
+              </button>
+            )}
+
+            {/* The Stuck Feature Action */}
+            {onOpenStuckModal && (
+              <button
+                onClick={onOpenStuckModal}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-colors shadow-2xs"
+                title="Open AI Diagnostic & Reroute Engine"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-700" />
+                <span>I'm Stuck</span>
+              </button>
+            )}
+
+            {/* Universal Agent Drawer Trigger */}
+            {onOpenAgentDrawer && (
+              <button
+                onClick={onOpenAgentDrawer}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-300 transition-colors shadow-2xs"
+                title="Open Universal PES Agent"
+              >
+                <Bot className="w-3.5 h-3.5 text-indigo-700" />
+                <span>AI Agent</span>
               </button>
             )}
 

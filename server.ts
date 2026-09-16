@@ -4,6 +4,12 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { globalPesEngine, DEFAULT_USERS, getMondayOfWeek } from './src/lib/pes-engine.ts';
 import { PathDSolver } from './src/lib/path-d-solver.ts';
+import { globalPesV2Engine, MASTER_PROMPT_INDEX } from './src/lib/pes-v2-engine.ts';
+import {
+  askUniversalAgent,
+  sortTheLineWithAi,
+  diagnoseAndRerouteStuck,
+} from './server/gemini-agent.ts';
 
 async function startServer() {
   const app = express();
@@ -291,6 +297,168 @@ async function startServer() {
       res.status(500).send(`Error generating ICS calendar: ${err.message}`);
     }
   });
+
+  // ==========================================
+  // PES V2 Transformation Architecture Routes
+  // ==========================================
+
+  // Compartment 1: Intake & Validation
+  apiRouter.get('/v2/intake', (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, data: globalPesV2Engine.getIntakeRecord() });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/v2/intake/parse', (req: Request, res: Response) => {
+    try {
+      const { rawInput } = req.body;
+      const record = globalPesV2Engine.processRawIntent(rawInput || '');
+      res.json({ ok: true, data: record });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Compartment 2: Knowledge & Resources
+  apiRouter.get('/v2/knowledge-resources', (req: Request, res: Response) => {
+    try {
+      res.json({
+        ok: true,
+        data: {
+          knowledgeEntities: globalPesV2Engine.getKnowledgeEntities(),
+          resourceEntities: globalPesV2Engine.getResourceEntities(),
+          dependencyMatrix: globalPesV2Engine.getDependencyMatrix(),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Compartment 3: Structural Evolution
+  apiRouter.get('/v2/pipeline-structure', (req: Request, res: Response) => {
+    try {
+      res.json({
+        ok: true,
+        data: {
+          listItems: globalPesV2Engine.getListItems(),
+          treeNodes: globalPesV2Engine.getTreeNodes(),
+          dependencyNodes: globalPesV2Engine.getDependencyNodes(),
+          bpmnElements: globalPesV2Engine.getBpmnElements(),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Compartment 3: Tickets & Middle Box Execution
+  apiRouter.get('/v2/tickets', (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, data: globalPesV2Engine.getTickets() });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/v2/tickets/:id/execute', (req: Request, res: Response) => {
+    try {
+      const ticket = globalPesV2Engine.executeTicket(req.params.id);
+      res.json({ ok: true, data: ticket });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/v2/tickets/:id/verify', (req: Request, res: Response) => {
+    try {
+      const { isValid } = req.body;
+      const ticket = globalPesV2Engine.verifyTicketProof(req.params.id, isValid !== false);
+      res.json({ ok: true, data: ticket });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/v2/tickets/:id/fail', (req: Request, res: Response) => {
+    try {
+      const { reason } = req.body;
+      const tt = globalPesV2Engine.triggerFailureAndTroubleshoot(req.params.id, reason || 'Manual failure trigger');
+      res.json({ ok: true, data: tt });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/v2/troubleshooting/:id/resolve', (req: Request, res: Response) => {
+    try {
+      const { reEntry } = req.body;
+      globalPesV2Engine.resolveTroubleshootingTicket(req.params.id, reEntry !== false);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Compartment 0: Master Prompt Architecture & Index
+  apiRouter.get('/v2/prompt-index', (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, data: MASTER_PROMPT_INDEX });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Compartment 4: Terminal JSON Payload
+  apiRouter.get('/v2/terminal-payload', (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, data: globalPesV2Engine.generateTerminalJsonPayload() });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Universal Agent & The Line & The Stuck Feature (Gemini API)
+  apiRouter.post('/agent/chat', async (req: Request, res: Response) => {
+    try {
+      const { message, history, contextData } = req.body;
+      if (!message) {
+        return res.status(400).json({ ok: false, error: 'message is required' });
+      }
+      const reply = await askUniversalAgent(message, history || [], contextData);
+      res.json({ ok: true, reply });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/agent/sort-line', async (req: Request, res: Response) => {
+    try {
+      const { items, customPrompt } = req.body;
+      const result = await sortTheLineWithAi(items || [], customPrompt);
+      res.json({ ok: true, data: result });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  apiRouter.post('/agent/stuck', async (req: Request, res: Response) => {
+    try {
+      const { blockerDescription, currentContext } = req.body;
+      if (!blockerDescription) {
+        return res.status(400).json({ ok: false, error: 'blockerDescription is required' });
+      }
+      const diagnosis = await diagnoseAndRerouteStuck(blockerDescription, currentContext);
+      res.json({ ok: true, data: diagnosis });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Direct /api/agent shortcuts
+  app.use('/api', apiRouter);
 
   // Mount API routers
   app.use('/v1', apiRouter);

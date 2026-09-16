@@ -22,10 +22,14 @@ import { InboxView } from './components/InboxView.js';
 import { CapacityView } from './components/CapacityView.js';
 import { ProofLedgerView } from './components/ProofLedgerView.js';
 import { AuditLogView } from './components/AuditLogView.js';
+import { PesV2PipelineView } from './components/PesV2PipelineView.js';
+import { TheLineView } from './components/TheLineView.js';
+import { UniversalAgentChatDrawer } from './components/UniversalAgentChatDrawer.js';
+import { StuckDiagnosticModal } from './components/StuckDiagnosticModal.js';
 import { CardDetailModal } from './components/CardDetailModal.js';
 import { TransitionModal } from './components/TransitionModal.js';
 import { NewCardModal } from './components/NewCardModal.js';
-import { AlertCircle, X } from 'lucide-react';
+import { AlertCircle, X, Bot, Zap } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('board');
@@ -55,6 +59,11 @@ export const App: React.FC = () => {
   const [isNewCardOpen, setIsNewCardOpen] = useState(false);
   const [isSplitView, setIsSplitView] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+
+  // Universal Agent & The Stuck Feature states
+  const [isAgentDrawerOpen, setIsAgentDrawerOpen] = useState(false);
+  const [isStuckModalOpen, setIsStuckModalOpen] = useState(false);
+  const [stuckInitialText, setStuckInitialText] = useState('');
 
   // Sync state from server/engine
   const refreshAll = useCallback(async () => {
@@ -337,6 +346,57 @@ export const App: React.FC = () => {
   const activeCard = cards.find((c) => c.state === 'Active');
   const unprocessedInboxCount = inbox.filter((i) => i.mark === '?' && !i.processed_at).length;
 
+  const handleSendToV2Pipeline = async (text: string) => {
+    setActiveTab('v2-pipeline');
+    try {
+      await fetch('/api/v1/v2/intake/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawInput: text }),
+      });
+      await refreshAll();
+    } catch (e) {
+      console.error('Failed to parse into V2 intake:', e);
+    }
+  };
+
+  const handleSendToV1Board = async (title: string, priorityScore: number = 80) => {
+    await handleCreateCard({
+      name: title,
+      level: 'Task',
+      current_state_desc: 'Staged from The Line',
+      desired_state_desc: 'Execution verified in PES',
+      proof_of_completion: 'Output artifact or verified exit code',
+      next_physical_action: 'Initialize execution step',
+      state: 'Ready',
+      planned_duration: 60,
+      priority: priorityScore,
+    });
+    setActiveTab('board');
+  };
+
+  const handleApplyReroute = async (plan: {
+    target: 'DropList' | 'TheLine' | 'V2_Engine' | 'Breakdown_Checklist';
+    actionTitle: string;
+    actionDetails: string;
+  }) => {
+    if (plan.target === 'TheLine') {
+      handleAddInboxItem(`${plan.actionTitle}: ${plan.actionDetails}`);
+      setActiveTab('the-line');
+    } else if (plan.target === 'DropList') {
+      handleAddInboxItem(`${plan.actionTitle}: ${plan.actionDetails}`);
+      setActiveTab('droplist');
+    } else if (plan.target === 'V2_Engine') {
+      handleSendToV2Pipeline(`${plan.actionTitle}: ${plan.actionDetails}`);
+    } else if (plan.target === 'Breakdown_Checklist' && activeCard) {
+      handleUpdateCard(activeCard.id, {
+        next_physical_action: plan.actionDetails,
+        what_happened: `Rerouted by The Stuck Feature: ${plan.actionTitle}`,
+      });
+      setActiveTab('board');
+    }
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'board':
@@ -346,6 +406,21 @@ export const App: React.FC = () => {
             onSelectCard={(c) => setSelectedCard(c)}
             onInitiateTransition={handleInitiateTransition}
           />
+        );
+      case 'the-line':
+        return (
+          <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+            <TheLineView
+              inbox={inbox}
+              onAddInboxItem={handleAddInboxItem}
+              onSendToV2Pipeline={handleSendToV2Pipeline}
+              onSendToV1Board={handleSendToV1Board}
+              onOpenStuckModal={(text) => {
+                setStuckInitialText(text || '');
+                setIsStuckModalOpen(true);
+              }}
+            />
+          </div>
         );
       case 'queue':
         return (
@@ -368,6 +443,8 @@ export const App: React.FC = () => {
             />
           </div>
         );
+      case 'v2-pipeline':
+        return <PesV2PipelineView />;
       case 'inbox':
         return (
           <InboxView
@@ -439,6 +516,11 @@ export const App: React.FC = () => {
         onSelectUser={setCurrentUser}
         isSplitView={isSplitView}
         onToggleSplitView={() => setIsSplitView((prev) => !prev)}
+        onOpenAgentDrawer={() => setIsAgentDrawerOpen(true)}
+        onOpenStuckModal={() => {
+          setStuckInitialText('');
+          setIsStuckModalOpen(true);
+        }}
       />
 
       {/* Single-Active Execution Banner (Only shown in standard desktop views) */}
@@ -527,6 +609,41 @@ export const App: React.FC = () => {
           onCreateCard={handleCreateCard}
         />
       )}
+
+      {/* Floating Universal Agent Trigger Button */}
+      <button
+        onClick={() => setIsAgentDrawerOpen((prev) => !prev)}
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-indigo-500/30 transition-all font-semibold text-xs border border-indigo-400/30 group"
+        title="Open Universal AI Agent"
+      >
+        <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
+        <span className="hidden sm:inline">PES AI Agent</span>
+      </button>
+
+      {/* Universal Agent Chat Drawer */}
+      <UniversalAgentChatDrawer
+        isOpen={isAgentDrawerOpen}
+        onClose={() => setIsAgentDrawerOpen(false)}
+        activeCard={activeCard}
+        inboxCount={unprocessedInboxCount}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab as ActiveTab);
+        }}
+        onSendToV2={(text) => handleSendToV2Pipeline(text)}
+        onOpenStuckModal={(contextText) => {
+          setStuckInitialText(contextText || '');
+          setIsStuckModalOpen(true);
+        }}
+      />
+
+      {/* The Stuck Feature Modal */}
+      <StuckDiagnosticModal
+        isOpen={isStuckModalOpen}
+        onClose={() => setIsStuckModalOpen(false)}
+        activeCard={activeCard}
+        initialBlockerText={stuckInitialText}
+        onApplyReroute={handleApplyReroute}
+      />
     </div>
   );
 };

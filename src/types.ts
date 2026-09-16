@@ -207,7 +207,225 @@ export type ActiveTab =
   | 'queue'
   | 'optimizer'
   | 'droplist'
+  | 'the-line'
+  | 'v2-pipeline'
   | 'inbox'
   | 'capacity'
   | 'proof'
   | 'logs';
+
+// ==========================================
+// PES V2 — Complete Transformation Architecture
+// ==========================================
+
+export type PesV2Stage =
+  | 'intent'
+  | 'validation'
+  | 'knowledge_resources'
+  | 'list'
+  | 'tree'
+  | 'dependencies'
+  | 'graph'
+  | 'bpmn'
+  | 'tickets'
+  | 'execution'
+  | 'proof'
+  | 'state_update'
+  | 'terminal_payload';
+
+export interface PromptInterrogation {
+  whatNeedsToKnow: string[];
+  whatNeedsToDo: string[];
+  whatNeedsToProduce: string[];
+  whatConnectsTo: string[];
+  whatCanStopIt: string[];
+  whatHappensNext: string[];
+}
+
+export interface PromptIndexItem {
+  id: string;
+  category: 'Macro' | 'Micro';
+  stage: PesV2Stage;
+  title: string;
+  component: string;
+  interrogation: PromptInterrogation;
+  rules: string[];
+  gates: string[];
+  failurePaths: string[];
+  templateSnippet: string;
+}
+
+export interface V2IntakeRecord {
+  id: string;
+  rawInput: string;
+  parsedSignal: {
+    whatPersonWants: string;
+    targetOutcome: string;
+    parameters: Record<string, string>;
+    constraints: string[];
+  };
+  intentBin: string;
+  personHas: {
+    assets: string[];
+    capabilities: string[];
+    currentSystemState: string;
+  };
+  intentHasComparison: {
+    available: string[];
+    missing: string[];
+    clarificationNeeded: string[];
+  };
+  validationGate: {
+    status: 'PASSED' | 'FAILED' | 'NEEDS_CLARIFICATION';
+    completenessCheck: boolean;
+    feasibilityCheck: boolean;
+    constraintsMet: boolean;
+    gateNotes: string;
+  };
+  timestamp: string;
+}
+
+export interface V2KnowledgeEntity {
+  id: string;
+  name: string;
+  type: 'System' | 'Database' | 'Protocol' | 'Policy' | 'Environment';
+  status: string;
+  properties: Record<string, string>;
+  relationships: { target: string; relation: string }[];
+}
+
+export interface V2ResourceEntity {
+  id: string;
+  name: string;
+  type: 'Tool' | 'API' | 'File' | 'Credential' | 'Capability';
+  availability: 'Available' | 'Locked' | 'Missing';
+  purpose: string;
+  location: string;
+  dependencies: string[];
+}
+
+export interface V2DependencyCondition {
+  id: string;
+  source: string;
+  target: string;
+  conditionType: 'Prerequisite' | 'Resource_Blocker' | 'Verification_Requirement';
+  description: string;
+  satisfied: boolean;
+}
+
+export interface V2ListItem {
+  id: string;
+  order: number;
+  item: string;
+  type: 'Action' | 'Resource' | 'Output' | 'Prerequisite';
+  requiredOutput: string;
+}
+
+export interface V2TreeNode {
+  id: string;
+  title: string;
+  description: string;
+  children?: V2TreeNode[];
+  level: number;
+}
+
+export interface V2DependencyNode {
+  id: string;
+  title: string;
+  prerequisites: string[];
+  unlocks: string[];
+  isBlocked: boolean;
+  parallelGroup?: string;
+}
+
+export interface V2BpmnElement {
+  id: string;
+  type: 'StartEvent' | 'Task' | 'Gateway' | 'EndEvent';
+  label: string;
+  gatewayType?: 'Exclusive' | 'Parallel';
+  condition?: string;
+  next: string[];
+}
+
+export type V2ExecutorClass = 'Human' | 'AI' | 'System' | 'Tool';
+
+export type V2TicketLifecycleState =
+  | 'Created'
+  | 'Sent'
+  | 'Received'
+  | 'Executing'
+  | 'Executed'
+  | 'ProofSubmitted'
+  | 'ProofChecked'
+  | 'Completed'
+  | 'Failed';
+
+export interface V2Ticket {
+  id: string;
+  title: string;
+  workDescription: string;
+  inputs: Record<string, string>;
+  requirements: string[];
+  dependencies: string[];
+  destination: string;
+  executorClass: V2ExecutorClass;
+  expectedResult: string;
+  proofRequirements: string;
+  lifecycleState: V2TicketLifecycleState;
+  executionResult?: string;
+  submittedProof?: string;
+  proofValid?: boolean;
+  telemetry: string[];
+  createdAt: string;
+  executedAt?: string;
+}
+
+export interface V2TelemetryLogEntry {
+  id: string;
+  timestamp: string;
+  ticketId: string;
+  eventType: 'SENT' | 'RECEIVED' | 'EXECUTE_START' | 'EXECUTE_STEP' | 'STDOUT' | 'STDERR' | 'PROOF_SUBMITTED' | 'STATE_UPDATE';
+  message: string;
+  metadata?: Record<string, any>;
+}
+
+export interface V2TroubleshootingTicket {
+  id: string;
+  failedTicketId: string;
+  failureEvidence: string;
+  rootCauseHypothesis: string;
+  mitigationPlan: string[];
+  reEntryStage: PesV2Stage;
+  status: 'Open' | 'Resolved' | 'Escalated';
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface V2TerminalJsonPayload {
+  payload_version: '2.0.0';
+  system: 'PES V2 (Planning Execution System)';
+  timestamp: string;
+  integrity_hash: string;
+  original_input: string;
+  validated_intent: V2IntakeRecord;
+  knowledge_and_resources: {
+    knowledge_entities: V2KnowledgeEntity[];
+    resource_entities: V2ResourceEntity[];
+    dependency_matrix: V2DependencyCondition[];
+  };
+  structural_evolution: {
+    list: V2ListItem[];
+    tree: V2TreeNode[];
+    dependency_graph: V2DependencyNode[];
+    bpmn_routing: V2BpmnElement[];
+  };
+  tickets: V2Ticket[];
+  telemetry_logs: V2TelemetryLogEntry[];
+  troubleshooting_history: V2TroubleshootingTicket[];
+  final_state_updates: {
+    knowledge_updated: boolean;
+    resources_released: string[];
+    dependencies_unlocked: string[];
+    overall_status: 'SUCCESS' | 'FAILED' | 'PARTIAL';
+  };
+}

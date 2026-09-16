@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="pes_repeat_definitions" targetNamespace="https://pes.local/bpmn" exporter="PES" exporterVersion="1.0.0">
+  <bpmn:process id="pes-repeat-series" name="PES repeat series" isExecutable="true">
+    <bpmn:extensionElements><zeebe:versionTag value="1.0.0" /></bpmn:extensionElements>
+    <bpmn:startEvent id="repeat_start" name="Start repeat series"><bpmn:outgoing>repeat_flow_create</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:serviceTask id="create_cycle" name="Create unique cycle"><bpmn:extensionElements><zeebe:taskDefinition type="pes-create-repeat-cycle" retries="5"/></bpmn:extensionElements><bpmn:incoming>repeat_flow_create</bpmn:incoming><bpmn:incoming>repeat_flow_again</bpmn:incoming><bpmn:outgoing>repeat_flow_child</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:callActivity id="run_cycle" name="Run commitment cycle"><bpmn:extensionElements><zeebe:calledElement processId="pes-commitment" bindingType="deployment" propagateAllChildVariables="true"/></bpmn:extensionElements><bpmn:incoming>repeat_flow_child</bpmn:incoming><bpmn:outgoing>repeat_flow_decide</bpmn:outgoing></bpmn:callActivity>
+    <bpmn:exclusiveGateway id="repeat_gateway" name="Repeat active?" default="repeat_flow_end"><bpmn:incoming>repeat_flow_decide</bpmn:incoming><bpmn:outgoing>repeat_flow_wait</bpmn:outgoing><bpmn:outgoing>repeat_flow_end</bpmn:outgoing></bpmn:exclusiveGateway>
+    <bpmn:intermediateCatchEvent id="repeat_timer" name="Wait for next cycle"><bpmn:incoming>repeat_flow_wait</bpmn:incoming><bpmn:outgoing>repeat_flow_again</bpmn:outgoing><bpmn:timerEventDefinition><bpmn:timeDuration>=repeat_interval</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="repeat_end" name="Repeat series stopped"><bpmn:incoming>repeat_flow_end</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="repeat_flow_create" sourceRef="repeat_start" targetRef="create_cycle"/>
+    <bpmn:sequenceFlow id="repeat_flow_child" sourceRef="create_cycle" targetRef="run_cycle"/>
+    <bpmn:sequenceFlow id="repeat_flow_decide" sourceRef="run_cycle" targetRef="repeat_gateway"/>
+    <bpmn:sequenceFlow id="repeat_flow_wait" sourceRef="repeat_gateway" targetRef="repeat_timer"><bpmn:conditionExpression>=repeat_active = true</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="repeat_flow_again" sourceRef="repeat_timer" targetRef="create_cycle"/>
+    <bpmn:sequenceFlow id="repeat_flow_end" sourceRef="repeat_gateway" targetRef="repeat_end"/>
+  </bpmn:process>
+</bpmn:definitions>

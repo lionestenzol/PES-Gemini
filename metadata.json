@@ -1,0 +1,6 @@
+{
+  "name": "PES - Personal Execution System",
+  "description": "Commitment execution and control system with guarded lifecycle, single-active task control, weekly capacity planning, and proof verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pes"
+version = "1.0.0"
+dependencies = ["rich>=13.7,<15", "textual>=0.70", "icalendar>=6.0", "temporalio>=1.31,<2"]
+requires-python = ">=3.10"
+
+[project.scripts]
+pes = "pes.__main__:main"
+pes-tui = "pes.tui:main"
+pes-worker = "pes.temporal.worker:main"
+pes-camunda-worker = "pes.camunda.worker:main"
+pes-path-e = "pes.path_e.server:main"
+
+[project.optional-dependencies]
+path-c = ["camunda-orchestration-sdk>=9,<10"]
+path-d = ["ortools==9.15.6755"]
+
+[tool.setuptools.packages.find]
+include = ["pes*"]
+
+[tool.setuptools.package-data]
+"pes.camunda" = ["resources/*.bpmn", "resources/*.dmn", "resources/forms/*.form"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

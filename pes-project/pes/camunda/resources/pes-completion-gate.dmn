@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+  xmlns:camunda="http://camunda.org/schema/1.0/dmn" id="pes_decisions"
+  name="PES decisions" namespace="https://pes.local/dmn" exporter="PES" exporterVersion="1.0.0">
+  <decision id="pes-completion-gate" name="PES completion gate">
+    <decisionTable id="completion_table" hitPolicy="FIRST">
+      <input id="input_result" label="Desired result made"><inputExpression id="expr_result" typeRef="boolean"><text>desired_result_made</text></inputExpression></input>
+      <input id="input_exists" label="Proof exists"><inputExpression id="expr_exists" typeRef="boolean"><text>proof_exists</text></inputExpression></input>
+      <input id="input_stored" label="Proof stored"><inputExpression id="expr_stored" typeRef="boolean"><text>proof_stored</text></inputExpression></input>
+      <input id="input_remains" label="Required action remains"><inputExpression id="expr_remains" typeRef="boolean"><text>required_action_remains</text></inputExpression></input>
+      <output id="output_passed" label="Passed" name="completion_passed" typeRef="boolean" />
+      <output id="output_reason" label="Reason" name="completion_reason" typeRef="string" />
+      <rule id="completion_pass"><inputEntry id="r1a"><text>true</text></inputEntry><inputEntry id="r1b"><text>true</text></inputEntry><inputEntry id="r1c"><text>true</text></inputEntry><inputEntry id="r1d"><text>false</text></inputEntry><outputEntry id="r1e"><text>true</text></outputEntry><outputEntry id="r1f"><text>"verified"</text></outputEntry></rule>
+      <rule id="completion_fail"><inputEntry id="r2a"><text>-</text></inputEntry><inputEntry id="r2b"><text>-</text></inputEntry><inputEntry id="r2c"><text>-</text></inputEntry><inputEntry id="r2d"><text>-</text></inputEntry><outputEntry id="r2e"><text>false</text></outputEntry><outputEntry id="r2f"><text>"completion evidence is incomplete"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

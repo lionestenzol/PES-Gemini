@@ -1,0 +1,1 @@
+{"schemaVersion":18,"id":"pes-schedule","type":"default","components":[{"key":"planned_date","label":"Planned date","type":"date","validate":{"required":true}},{"key":"planned_start","label":"Planned start","type":"time"},{"key":"planned_duration","label":"Duration in minutes","type":"number","validate":{"required":true,"min":1}}]}

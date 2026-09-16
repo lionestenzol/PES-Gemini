@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: pes
+Version: 1.0.0
+Requires-Python: >=3.10
+Requires-Dist: rich<15,>=13.7
+Requires-Dist: textual>=0.70
+Requires-Dist: icalendar>=6.0
+Requires-Dist: temporalio<2,>=1.31
+Provides-Extra: path-c
+Requires-Dist: camunda-orchestration-sdk<10,>=9; extra == "path-c"
+Provides-Extra: path-d
+Requires-Dist: ortools==9.15.6755; extra == "path-d"

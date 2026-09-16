@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="utf-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="pes_commitment_definitions" targetNamespace="https://pes.local/bpmn" exporter="PES" exporterVersion="1.0.0">
+  <bpmn:message id="message_unblock" name="pes-unblock">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=commitment_id" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="pes-commitment" name="PES commitment lifecycle" isExecutable="true">
+    <bpmn:extensionElements>
+      <zeebe:versionTag value="1.0.0" />
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="commitment_start" name="Capture commitment">
+      <bpmn:outgoing>flow_start_project</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="project_captured" name="Record Captured state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Captured&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_start_project</bpmn:incoming>
+      <bpmn:outgoing>flow_project_define</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="define_commitment" name="Define commitment">
+      <bpmn:extensionElements>
+        <zeebe:formDefinition formId="pes-define" bindingType="latest" />
+        <zeebe:assignmentDefinition assignee="=owner" candidateGroups="pes-workers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_project_define</bpmn:incoming>
+      <bpmn:incoming>flow_ready_failed</bpmn:incoming>
+      <bpmn:outgoing>flow_define_ready_check</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="check_ready" name="Check Ready guard">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-ready-check" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_define_ready_check</bpmn:incoming>
+      <bpmn:outgoing>flow_ready_gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="ready_gateway" name="Ready guard passed?" default="flow_ready_failed">
+      <bpmn:incoming>flow_ready_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_ready_passed</bpmn:outgoing>
+      <bpmn:outgoing>flow_ready_failed</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="project_ready" name="Record Ready state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Ready&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_ready_passed</bpmn:incoming>
+      <bpmn:incoming>flow_unblocked</bpmn:incoming>
+      <bpmn:outgoing>flow_ready_schedule</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="schedule_commitment" name="Schedule commitment">
+      <bpmn:extensionElements>
+        <zeebe:formDefinition formId="pes-schedule" bindingType="latest" />
+        <zeebe:assignmentDefinition assignee="=owner" candidateGroups="pes-schedulers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:ioMapping>
+          <zeebe:output source="=planned_date" target="planned_date" />
+          <zeebe:output source="=planned_start" target="planned_start" />
+          <zeebe:output source="=planned_duration" target="planned_duration" />
+        </zeebe:ioMapping>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_ready_schedule</bpmn:incoming>
+      <bpmn:incoming>flow_schedule_failed</bpmn:incoming>
+      <bpmn:incoming>flow_active_rejected</bpmn:incoming>
+      <bpmn:outgoing>flow_schedule_check</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="check_schedule" name="Check capacity and dependencies">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-schedule-check" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_schedule_check</bpmn:incoming>
+      <bpmn:outgoing>flow_schedule_gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="schedule_gateway" name="Schedule guard passed?" default="flow_schedule_failed">
+      <bpmn:incoming>flow_schedule_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_schedule_passed</bpmn:outgoing>
+      <bpmn:outgoing>flow_schedule_failed</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="project_scheduled" name="Record Scheduled state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Scheduled&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_schedule_passed</bpmn:incoming>
+      <bpmn:outgoing>flow_scheduled_lock</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="acquire_active" name="Acquire Single-Active lock">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-acquire-active" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_scheduled_lock</bpmn:incoming>
+      <bpmn:incoming>flow_resume_lock</bpmn:incoming>
+      <bpmn:outgoing>flow_active_gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="active_gateway" name="Active lock acquired?" default="flow_active_rejected">
+      <bpmn:incoming>flow_active_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_active_passed</bpmn:outgoing>
+      <bpmn:outgoing>flow_active_rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="project_active" name="Record Active state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Active&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_active_passed</bpmn:incoming>
+      <bpmn:outgoing>flow_active_work</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="active_work" name="Perform active work">
+      <bpmn:extensionElements>
+        <zeebe:formDefinition formId="pes-active" bindingType="latest" />
+        <zeebe:assignmentDefinition assignee="=owner" candidateGroups="pes-workers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:ioMapping>
+          <zeebe:output source="=work_outcome" target="work_outcome" />
+          <zeebe:output source="=result" target="result" />
+          <zeebe:output source="=what_happened" target="what_happened" />
+          <zeebe:output source="=proof_location" target="proof_location" />
+          <zeebe:output source="=block_reason" target="block_reason" />
+          <zeebe:output source="=waiting_for" target="waiting_for" />
+          <zeebe:output source="=review_date" target="review_date" />
+          <zeebe:output source="=fallback_action" target="fallback_action" />
+          <zeebe:output source="=next_physical_action" target="next_physical_action" />
+          <zeebe:output source="=actor_id" target="actor_id" />
+        </zeebe:ioMapping>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_active_work</bpmn:incoming>
+      <bpmn:outgoing>flow_work_release</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="release_active" name="Release Active lock">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-release-active" retries="5" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_work_release</bpmn:incoming>
+      <bpmn:outgoing>flow_outcome_gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="outcome_gateway" name="Work outcome" default="flow_outcome_canceled">
+      <bpmn:incoming>flow_outcome_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_outcome_completed</bpmn:outgoing>
+      <bpmn:outgoing>flow_outcome_paused</bpmn:outgoing>
+      <bpmn:outgoing>flow_outcome_blocked</bpmn:outgoing>
+      <bpmn:outgoing>flow_outcome_canceled</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="project_completed" name="Record Completed state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Completed&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_outcome_completed</bpmn:incoming>
+      <bpmn:incoming>flow_proof_failed</bpmn:incoming>
+      <bpmn:outgoing>flow_completed_proof</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="proof_task" name="Check and locate proof">
+      <bpmn:extensionElements>
+        <zeebe:formDefinition formId="pes-proof" bindingType="latest" />
+        <zeebe:assignmentDefinition candidateGroups="pes-verifiers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:ioMapping>
+          <zeebe:output source="=result" target="result" />
+          <zeebe:output source="=proof_location" target="proof_location" />
+          <zeebe:output source="=desired_result_made" target="desired_result_made" />
+          <zeebe:output source="=proof_exists" target="proof_exists" />
+          <zeebe:output source="=proof_stored" target="proof_stored" />
+          <zeebe:output source="=required_action_remains" target="required_action_remains" />
+          <zeebe:output source="=actor_id" target="actor_id" />
+        </zeebe:ioMapping>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_completed_proof</bpmn:incoming>
+      <bpmn:outgoing>flow_proof_decision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:businessRuleTask id="completion_decision" name="Evaluate completion gate">
+      <bpmn:extensionElements>
+        <zeebe:calledDecision decisionId="pes-completion-gate" resultVariable="completion_decision" bindingType="deployment" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_proof_decision</bpmn:incoming>
+      <bpmn:outgoing>flow_proof_gateway</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:exclusiveGateway id="proof_gateway" name="Completion gate passed?" default="flow_proof_failed">
+      <bpmn:incoming>flow_proof_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_proof_passed</bpmn:outgoing>
+      <bpmn:outgoing>flow_proof_failed</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="store_proof" name="Store Proof Index">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-store-proof" retries="5" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_proof_passed</bpmn:incoming>
+      <bpmn:outgoing>flow_project_verified</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="project_verified" name="Record Verified state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Verified&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_project_verified</bpmn:incoming>
+      <bpmn:outgoing>flow_verified_done</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="confirm_done" name="Confirm Done">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition assignee="=owner" candidateGroups="pes-workers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_verified_done</bpmn:incoming>
+      <bpmn:outgoing>flow_project_done</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="project_done" name="Record Done state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Done&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_project_done</bpmn:incoming>
+      <bpmn:outgoing>flow_done_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="done_end" name="Done">
+      <bpmn:incoming>flow_done_end</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="project_paused" name="Record Paused state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Paused&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_outcome_paused</bpmn:incoming>
+      <bpmn:outgoing>flow_pause_resume</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="resume_task" name="Resume paused work">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition assignee="=owner" candidateGroups="pes-workers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_pause_resume</bpmn:incoming>
+      <bpmn:outgoing>flow_resume_lock</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="project_blocked" name="Record Blocked state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Blocked&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_outcome_blocked</bpmn:incoming>
+      <bpmn:outgoing>flow_block_wait</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:eventBasedGateway id="block_wait" name="Wait for unblock or review date">
+      <bpmn:incoming>flow_block_wait</bpmn:incoming>
+      <bpmn:outgoing>flow_early_unblock</bpmn:outgoing>
+      <bpmn:outgoing>flow_review_timer</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
+    <bpmn:intermediateCatchEvent id="unblock_message" name="Block cleared">
+      <bpmn:incoming>flow_early_unblock</bpmn:incoming>
+      <bpmn:outgoing>flow_unblocked</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="message_unblock" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="block_review_timer" name="Blocked review date">
+      <bpmn:incoming>flow_review_timer</bpmn:incoming>
+      <bpmn:outgoing>flow_timer_review</bpmn:outgoing>
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDate>=review_date</bpmn:timeDate>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:userTask id="block_review_task" name="Review blocked commitment">
+      <bpmn:extensionElements>
+        <zeebe:formDefinition formId="pes-block-review" bindingType="latest" />
+        <zeebe:assignmentDefinition assignee="=owner" candidateGroups="pes-reviewers" />
+        <zeebe:taskListeners><zeebe:taskListener eventType="completing" type="pes-audit-user-task" retries="3" /></zeebe:taskListeners>
+        <zeebe:ioMapping>
+          <zeebe:output source="=block_cleared" target="block_cleared" />
+          <zeebe:output source="=review_date" target="review_date" />
+          <zeebe:output source="=fallback_action" target="fallback_action" />
+          <zeebe:output source="=actor_id" target="actor_id" />
+        </zeebe:ioMapping>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_timer_review</bpmn:incoming>
+      <bpmn:outgoing>flow_block_review_gateway</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="block_review_gateway" name="Block cleared?" default="flow_block_again">
+      <bpmn:incoming>flow_block_review_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_block_cleared</bpmn:outgoing>
+      <bpmn:outgoing>flow_block_again</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="project_canceled" name="Record Canceled state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pes-project-state" retries="5" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&quot;Canceled&quot;" target="pes_state" />
+          <zeebe:input source="=projection_version + 1" target="projection_version" />
+          <zeebe:output source="=pes_state" target="pes_state" />
+          <zeebe:output source="=projection_version" target="projection_version" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_outcome_canceled</bpmn:incoming>
+      <bpmn:outgoing>flow_canceled_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="canceled_end" name="Canceled">
+      <bpmn:incoming>flow_canceled_end</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="flow_start_project" sourceRef="commitment_start" targetRef="project_captured" />
+    <bpmn:sequenceFlow id="flow_project_define" sourceRef="project_captured" targetRef="define_commitment" />
+    <bpmn:sequenceFlow id="flow_define_ready_check" sourceRef="define_commitment" targetRef="check_ready" />
+    <bpmn:sequenceFlow id="flow_ready_gateway" sourceRef="check_ready" targetRef="ready_gateway" />
+    <bpmn:sequenceFlow id="flow_ready_passed" sourceRef="ready_gateway" targetRef="project_ready">
+      <bpmn:conditionExpression>=ready_passed = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_ready_failed" sourceRef="ready_gateway" targetRef="define_commitment" />
+    <bpmn:sequenceFlow id="flow_ready_schedule" sourceRef="project_ready" targetRef="schedule_commitment" />
+    <bpmn:sequenceFlow id="flow_schedule_check" sourceRef="schedule_commitment" targetRef="check_schedule" />
+    <bpmn:sequenceFlow id="flow_schedule_gateway" sourceRef="check_schedule" targetRef="schedule_gateway" />
+    <bpmn:sequenceFlow id="flow_schedule_passed" sourceRef="schedule_gateway" targetRef="project_scheduled">
+      <bpmn:conditionExpression>=schedule_passed = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_schedule_failed" sourceRef="schedule_gateway" targetRef="schedule_commitment" />
+    <bpmn:sequenceFlow id="flow_scheduled_lock" sourceRef="project_scheduled" targetRef="acquire_active" />
+    <bpmn:sequenceFlow id="flow_active_gateway" sourceRef="acquire_active" targetRef="active_gateway" />
+    <bpmn:sequenceFlow id="flow_active_passed" sourceRef="active_gateway" targetRef="project_active">
+      <bpmn:conditionExpression>=active_passed = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_active_rejected" sourceRef="active_gateway" targetRef="schedule_commitment" />
+    <bpmn:sequenceFlow id="flow_active_work" sourceRef="project_active" targetRef="active_work" />
+    <bpmn:sequenceFlow id="flow_work_release" sourceRef="active_work" targetRef="release_active" />
+    <bpmn:sequenceFlow id="flow_outcome_gateway" sourceRef="release_active" targetRef="outcome_gateway" />
+    <bpmn:sequenceFlow id="flow_outcome_completed" sourceRef="outcome_gateway" targetRef="project_completed">
+      <bpmn:conditionExpression>=work_outcome = &quot;Completed&quot;</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_outcome_paused" sourceRef="outcome_gateway" targetRef="project_paused">
+      <bpmn:conditionExpression>=work_outcome = &quot;Paused&quot;</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_outcome_blocked" sourceRef="outcome_gateway" targetRef="project_blocked">
+      <bpmn:conditionExpression>=work_outcome = &quot;Blocked&quot;</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_outcome_canceled" sourceRef="outcome_gateway" targetRef="project_canceled" />
+    <bpmn:sequenceFlow id="flow_completed_proof" sourceRef="project_completed" targetRef="proof_task" />
+    <bpmn:sequenceFlow id="flow_proof_decision" sourceRef="proof_task" targetRef="completion_decision" />
+    <bpmn:sequenceFlow id="flow_proof_gateway" sourceRef="completion_decision" targetRef="proof_gateway" />
+    <bpmn:sequenceFlow id="flow_proof_passed" sourceRef="proof_gateway" targetRef="store_proof">
+      <bpmn:conditionExpression>=completion_decision.completion_passed = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_proof_failed" sourceRef="proof_gateway" targetRef="project_completed" />
+    <bpmn:sequenceFlow id="flow_project_verified" sourceRef="store_proof" targetRef="project_verified" />
+    <bpmn:sequenceFlow id="flow_verified_done" sourceRef="project_verified" targetRef="confirm_done" />
+    <bpmn:sequenceFlow id="flow_project_done" sourceRef="confirm_done" targetRef="project_done" />
+    <bpmn:sequenceFlow id="flow_done_end" sourceRef="project_done" targetRef="done_end" />
+    <bpmn:sequenceFlow id="flow_pause_resume" sourceRef="project_paused" targetRef="resume_task" />
+    <bpmn:sequenceFlow id="flow_resume_lock" sourceRef="resume_task" targetRef="acquire_active" />
+    <bpmn:sequenceFlow id="flow_block_wait" sourceRef="project_blocked" targetRef="block_wait" />
+    <bpmn:sequenceFlow id="flow_early_unblock" sourceRef="block_wait" targetRef="unblock_message" />
+    <bpmn:sequenceFlow id="flow_review_timer" sourceRef="block_wait" targetRef="block_review_timer" />
+    <bpmn:sequenceFlow id="flow_unblocked" sourceRef="unblock_message" targetRef="project_ready" />
+    <bpmn:sequenceFlow id="flow_timer_review" sourceRef="block_review_timer" targetRef="block_review_task" />
+    <bpmn:sequenceFlow id="flow_block_review_gateway" sourceRef="block_review_task" targetRef="block_review_gateway" />
+    <bpmn:sequenceFlow id="flow_block_cleared" sourceRef="block_review_gateway" targetRef="project_ready">
+      <bpmn:conditionExpression>=block_cleared = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_block_again" sourceRef="block_review_gateway" targetRef="block_wait" />
+    <bpmn:sequenceFlow id="flow_canceled_end" sourceRef="project_canceled" targetRef="canceled_end" />
+  </bpmn:process>
+</bpmn:definitions>
